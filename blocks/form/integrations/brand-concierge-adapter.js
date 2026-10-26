@@ -43,11 +43,19 @@ const UNAVAILABLE_MESSAGE = 'This form is currently unavailable. Please try agai
  * The host chat page may not run EDS's `scripts/aem.js`, which normally sets
  * `window.hlx.codeBasePath`. The form block, its components, and the rule engine worker all
  * resolve their own asset URLs through that global, so derive and provide it here from this
- * module's own URL — without clobbering a value an actual EDS page may have already set.
+ * module's own URL.
+ *
+ * EDS defaults `codeBasePath` to an empty string (meaning "same origin as the host page").
+ * When the form is embedded on a cross-origin host that empty value is wrong: the form's
+ * assets (form.css, functions, component CSS) live on the origin that serves this module,
+ * not on the host. So treat an empty/unset value as absent and point it at this module's
+ * origin; a genuinely pre-set, non-empty value is still respected.
  */
 function ensureCodeBasePath() {
   globalThis.hlx ??= {};
-  globalThis.hlx.codeBasePath ??= new URL('../../..', import.meta.url).href.replace(/\/$/, '');
+  if (!globalThis.hlx.codeBasePath) {
+    globalThis.hlx.codeBasePath = new URL('../../..', import.meta.url).href.replace(/\/$/, '');
+  }
   return globalThis.hlx.codeBasePath;
 }
 
