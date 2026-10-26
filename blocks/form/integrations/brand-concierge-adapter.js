@@ -26,7 +26,6 @@
 
 import { loadCSS } from '../../../scripts/aem.js';
 import { renderForm } from '../form.js';
-import { getFormModel } from '../rules/index.js';
 
 import { createAdaptiveFormSubmissionObserver } from './brand-concierge-submission.js';
 
@@ -41,20 +40,14 @@ const EMBEDDED_CLASS = 'af-embedded';
 const UNAVAILABLE_MESSAGE = 'This form is currently unavailable. Please try again later.';
 
 /**
- * The form block, its components, and the rule engine worker all resolve their own asset URLs
- * through `window.hlx.codeBasePath`. EDS's `scripts/aem.js` (imported transitively here) runs
- * `setup()` on load and sets that global to an empty string on a non-EDS host, which makes
- * those assets resolve as `/blocks/...` against the *chat page* origin (e.g. `:8081`) instead
- * of wherever this provider is actually served — breaking the worker, custom functions, and
- * lazily-loaded component assets. Treat an empty string as "unset" (not just `null`/`undefined`,
- * which `??=` would) and pin the path to this module's own origin, derived from its URL. A
- * non-empty value that a real EDS page already set is preserved.
+ * The host chat page may not run EDS's `scripts/aem.js`, which normally sets
+ * `window.hlx.codeBasePath`. The form block, its components, and the rule engine worker all
+ * resolve their own asset URLs through that global, so derive and provide it here from this
+ * module's own URL — without clobbering a value an actual EDS page may have already set.
  */
 function ensureCodeBasePath() {
   globalThis.hlx ??= {};
-  if (!globalThis.hlx.codeBasePath) {
-    globalThis.hlx.codeBasePath = new URL('../../..', import.meta.url).href.replace(/\/$/, '');
-  }
+  globalThis.hlx.codeBasePath ??= new URL('../../..', import.meta.url).href.replace(/\/$/, '');
   return globalThis.hlx.codeBasePath;
 }
 
@@ -163,27 +156,17 @@ export function createAdaptiveFormProvider() {
             staging.replaceChildren();
             return;
           }
-          if (!result?.form) {
+          const model = result.afbForm;
+          if (!model) {
             staging.replaceChildren();
             fail('ADAPTIVE_FORM_MODEL_UNAVAILABLE');
             return;
           }
-          const subscribe = (model, type, listener) => {
+          const subscribe = (type, listener) => {
             if (destroyed || settled) return;
             const subscription = model.subscribe(listener, type);
             if (destroyed || settled) subscription.unsubscribe();
             else subscriptions.push(subscription);
-          };
-          // Wire the form lifecycle to the main-thread Adaptive Form model. On the Web Worker
-          // path (every real browser) `renderForm` resolves with `afbForm: null` and the model
-          // is created later by `loadRuleEngine`, so fall back to the `formModelReady` DOM event
-          // (or `getFormModel`, if it is already ready) instead of requiring `result.afbForm`.
-          const wireModel = (model) => {
-            if (!model || destroyed || settled) return;
-            subscribe(model, 'scriptError', () => fail('ADAPTIVE_FORM_RULE_EXECUTION_FAILED'));
-            subscribe(model, 'submitSuccess', (event) => submission?.success(event));
-            subscribe(model, 'submitFailure', (event) => submission?.failure(event));
-            subscribe(model, 'submitError', (event) => submission?.failure(event));
           };
           result.form.lang = context.locale ?? input.lang ?? '';
           if (input.title && !result.form.hasAttribute('aria-label') && !result.form.hasAttribute('aria-labelledby')) {
@@ -192,16 +175,10 @@ export function createAdaptiveFormProvider() {
           formHost.append(...staging.childNodes);
           root.addEventListener('input', progress);
           submission = createAdaptiveFormSubmissionObserver(formHost, input, { emit, report });
-          const existingModel = result.afbForm ?? getFormModel(result.form.dataset?.id);
-          if (existingModel) {
-            wireModel(existingModel);
-          } else {
-            result.form.addEventListener(
-              'formModelReady',
-              (event) => wireModel(event.detail?.model),
-              { once: true },
-            );
-          }
+          subscribe('scriptError', () => fail('ADAPTIVE_FORM_RULE_EXECUTION_FAILED'));
+          subscribe('submitSuccess', (event) => submission?.success(event));
+          subscribe('submitFailure', (event) => submission?.failure(event));
+          subscribe('submitError', (event) => submission?.failure(event));
           if (destroyed || settled) {
             staging.replaceChildren();
             return;
