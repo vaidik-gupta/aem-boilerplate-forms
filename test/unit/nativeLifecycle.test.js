@@ -186,20 +186,16 @@ describe('Native form lifecycle', () => {
     assert.ok(form.querySelector('.error-message'));
   });
 
-  it('preserves worker rendering and deferred model restoration', async () => {
+  it('runs the rule engine on the main thread and bypasses an available Worker', async () => {
     const input = definition('worker');
     const { afbForm } = await renderForm(input, container);
     const state = afbForm.getState(true);
     const previousWorker = global.Worker;
-    let worker;
+    let workerConstructed = false;
     global.Worker = class {
       constructor() {
-        worker = this;
-        this.postMessage = Sinon.spy();
-      }
-
-      addEventListener(type, listener) {
-        this.listener = listener;
+        workerConstructed = true;
+        throw new Error('Worker must not be constructed when USE_RULE_ENGINE_WORKER is false');
       }
     };
     window.hlx = { codeBasePath: '..' };
@@ -208,14 +204,10 @@ describe('Native form lifecycle', () => {
       input.properties = { customFunctionsPath: '/functions.js' };
       form.dataset.id = state.id;
       const renderer = Sinon.stub().resolves({ form });
-      const response = initAdaptiveForm(input, renderer);
-      await settle();
-      assert.strictEqual(worker.postMessage.firstCall.args[0].name, 'createFormInstance');
-      await worker.listener({ data: { name: 'renderForm', payload: state } });
-      assert.strictEqual((await response).afbForm, null);
+      const response = await initAdaptiveForm(input, renderer);
+      assert.strictEqual(workerConstructed, false, 'does not construct a Worker');
+      assert.ok(response.afbForm, 'model is available synchronously (non-null)');
       assert.strictEqual(renderer.callCount, 1);
-      await worker.listener({ data: { name: 'restoreState', payload: { state } } });
-      await settle();
       assert.strictEqual(window.myForm.getElement('worker-name').value, 'Ada');
     } finally {
       if (previousWorker === undefined) delete global.Worker;

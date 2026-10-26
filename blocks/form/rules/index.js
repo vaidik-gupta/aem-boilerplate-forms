@@ -29,7 +29,7 @@ import {
   fetchData,
 } from '../util.js';
 import registerCustomFunctions, { preloadFunctionScripts } from './functionRegistration.js';
-import { LOG_LEVEL } from '../constant.js';
+import { LOG_LEVEL, USE_RULE_ENGINE_WORKER } from '../constant.js';
 import { createOptimizedPicture } from '../../../scripts/aem.js';
 
 const formSubscriptions = {};
@@ -434,7 +434,7 @@ export async function loadRuleEngine(formDef, htmlForm, captcha, genFormRenditio
 }
 
 async function initializeRuleEngineWorker(formDef, renderHTMLForm) {
-  if (typeof Worker === 'undefined') {
+  if (!USE_RULE_ENGINE_WORKER || typeof Worker === 'undefined') {
     // No worker: fetch prefill only when enabled (worker path does the same in RuleEngineWorker.js)
     const needsPrefill = formDef?.properties?.['fd:formDataEnabled'] === true;
     const data = needsPrefill ? await fetchData(formDef?.id, window.location.search || '') : null;

@@ -2,6 +2,7 @@ import { createOptimizedPicture, loadCSS } from '../../scripts/aem.js';
 import transferRepeatableDOM, { insertAddButton, insertRemoveButton } from './components/repeat/repeat.js';
 import {
   emailPattern, getSubmitBaseUrl, SUBMISSION_SERVICE, SUPPORTED_SUBMISSION_ACTION_TYPES,
+  USE_RULE_ENGINE_WORKER,
 } from './constant.js';
 import GoogleReCaptcha from './integrations/recaptcha.js';
 import componentDecorator from './mappings.js';
@@ -368,7 +369,7 @@ export async function createForm(formDef, data, source = 'aem', { initializeRule
   }
   transferRepeatableDOM(form, formDef, form, formId);
 
-  if (initializeRules && afModule && typeof Worker === 'undefined') {
+  if (initializeRules && afModule && (!USE_RULE_ENGINE_WORKER || typeof Worker === 'undefined')) {
     window.setTimeout(async () => {
       afModule.loadRuleEngine(formDef, form, captcha, generateFormRendition, data);
     }, DELAY_MS);
